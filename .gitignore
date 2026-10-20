@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode user data and build products
+**/xcuserdata/
+DerivedData/
+.build/
+build/
+*.xcuserstate
+*.xccheckout
+*.moved-aside
+*.hmap
+
+# Swift Package Manager
+.swiftpm/
+
+# Temporary and diagnostic files
+*.swp
+*.log
