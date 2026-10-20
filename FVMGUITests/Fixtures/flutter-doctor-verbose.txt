@@ -1,0 +1,16 @@
+# Parser sample only; version, path and diagnostic details are synthetic.
+[✓] Flutter (Channel stable, 3.24.1, on macOS 14.5)
+    • Flutter version 3.24.1 on channel stable at /Users/developer/flutter
+    • Upstream repository https://github.com/flutter/flutter.git
+    • Framework revision 1a2b3c4d5e (1 week ago), 2024-06-01 10:00:00 -0700
+    • Engine revision 1234567890
+    • Dart version 3.5.0
+[!] Android toolchain - develop for Android devices (Android SDK version 35.0.0)
+    • Android SDK at /Users/developer/Library/Android/sdk
+    ! Android license status unknown.
+      Run `flutter doctor --android-licenses` to accept the SDK licenses.
+[✓] Xcode - develop for iOS and macOS (Xcode 15.4)
+    • Xcode at /Applications/Xcode.app/Contents/Developer
+[✓] Network resources
+    • All expected network resources are available.
+! Doctor found issues in 1 category.

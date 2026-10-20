@@ -1,0 +1,37 @@
+{
+  "size": "4.78 GB",
+  "versions": [
+    {
+      "name": "3.47.2",
+      "type": "release",
+      "directory": "/Users/example/fvm/versions/3.47.2",
+      "flutterSdkVersion": "3.47.2",
+      "dartSdkVersion": "3.13.2",
+      "isSetup": true,
+      "binPath": "/Users/example/fvm/versions/3.47.2/bin",
+      "hasOldBinPath": false,
+      "dartBinPath": "/Users/example/fvm/versions/3.47.2/bin",
+      "dartExec": "/Users/example/fvm/versions/3.47.2/bin/dart",
+      "flutterExec": "/Users/example/fvm/versions/3.47.2/bin/flutter"
+    },
+    {
+      "name": "3.41.6",
+      "type": "release",
+      "directory": "/Users/example/fvm/versions/3.41.6",
+      "flutterSdkVersion": "3.41.6",
+      "dartSdkVersion": "3.11.4",
+      "isSetup": true,
+      "binPath": "/Users/example/fvm/versions/3.41.6/bin",
+      "hasOldBinPath": false,
+      "dartBinPath": "/Users/example/fvm/versions/3.41.6/bin",
+      "dartExec": "/Users/example/fvm/versions/3.41.6/bin/dart",
+      "flutterExec": "/Users/example/fvm/versions/3.41.6/bin/flutter"
+    }
+  ],
+  "projects": [
+    "/Users/example/Development/Unit/ish_flutter_gitsh"
+  ],
+  "unreferencedVersions": [
+    "3.41.6"
+  ]
+}
