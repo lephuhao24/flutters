@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish or retry, for example v1.0
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,10 +21,12 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Validate release tag
         env:
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           VERSION="${TAG_NAME#v}"
@@ -48,7 +56,7 @@ jobs:
       - name: Package release assets
         id: package
         env:
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           ASSET_DIR="$RUNNER_TEMP/release-assets"
@@ -63,7 +71,7 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
           ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
         run: |
           set -euo pipefail
@@ -82,7 +90,7 @@ jobs:
 
       - name: Generate Homebrew cask
         env:
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
           ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
         run: |
           set -euo pipefail
@@ -95,12 +103,19 @@ jobs:
 
       - name: Audit Homebrew cask
         env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-        run: brew audit --cask --strict "${{ steps.package.outputs.asset_dir }}/fvm-gui.rb"
+          ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
+        run: |
+          set -euo pipefail
+          brew tap-new --no-git lephuhao24/homebrew-tap
+          TAP_PATH="$(brew --repository lephuhao24/tap)"
+          mkdir -p "$TAP_PATH/Casks"
+          cp "$ASSET_DIR/fvm-gui.rb" "$TAP_PATH/Casks/fvm-gui.rb"
+          brew trust --cask lephuhao24/tap/fvm-gui
+          brew audit --cask --strict lephuhao24/tap/fvm-gui
 
       - name: Attach cask to release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
           ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
         run: gh release upload "$TAG_NAME" "$ASSET_DIR/fvm-gui.rb" --clobber

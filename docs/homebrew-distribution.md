@@ -16,7 +16,7 @@ The cask requires macOS 14 or newer. The fully qualified install command trusts 
 
 ## Release a version
 
-Update `MARKETING_VERSION` in the Xcode project, commit the release source, and push a matching tag such as `v1.0`. The tag version must use numeric `major.minor` or `major.minor.patch` form and match the app's marketing version. GitHub Actions builds with Xcode 27, creates the ZIP without code signing, calculates its SHA-256, publishes the release assets, and generates the cask from the exact ZIP checksum.
+Update `MARKETING_VERSION` in the Xcode project, commit the release source, and push a matching tag such as `v1.0`. The tag version must use numeric `major.minor` or `major.minor.patch` form and match the app's marketing version. GitHub Actions builds with Xcode 27, creates the ZIP without code signing, calculates its SHA-256, publishes the release assets, and generates the cask from the exact ZIP checksum. To retry or finish an existing tag after a workflow change, run the workflow manually from the default branch and enter that tag.
 
 The workflow requires GitHub Actions to be enabled with the default `GITHUB_TOKEN` permissions for release contents. It does not need an Apple signing secret for tester releases.
 
