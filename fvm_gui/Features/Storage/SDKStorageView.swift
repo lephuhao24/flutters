@@ -51,7 +51,7 @@ struct SDKStorageView: View {
                 Text("FVM will remove the SDK and may recover about \(size). \(referenceWarning)\(globalWarning)")
             }
         }
-        .task { if model.analysis == nil { await container.refreshStorage() } }
+        .task { if model.status != .running { await container.refreshStorage(force: false) } }
     }
 
     private func summary(_ analysis: SDKStorageAnalysis) -> some View {

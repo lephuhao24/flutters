@@ -10,6 +10,23 @@ struct MockProjectService: ProjectServicing {
     }
 }
 final class AppStateTests: XCTestCase {
+    @MainActor func testUnifiedSDKNavigationRestoresAndMigratesLegacyDestinations() throws {
+        let suite = "FVM GUI navigation tests \(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set("Available Releases", forKey: "app.navigationDestination")
+        let migrated = AppWindowCoordinator(defaults: defaults)
+        XCTAssertEqual(migrated.selection, .sdks)
+        XCTAssertEqual(migrated.selection?.title, "Flutter SDKs")
+        XCTAssertEqual(AppDestination.allCases.filter { $0 == .sdks }.count, 1)
+
+        migrated.selection = .projects
+        XCTAssertEqual(AppWindowCoordinator(defaults: defaults).selection, .projects)
+        XCTAssertEqual(AppDestination.restoring("Storage"), .sdks)
+        XCTAssertEqual(AppDestination.restoring("Installed SDKs"), .sdks)
+    }
+
     @MainActor func testProjectPersistenceDeduplicationAndRemoval() async throws {
         let suite = "FVM GUI tests \(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

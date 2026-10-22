@@ -94,20 +94,33 @@ import Observation
         watchers = []
         watchedPaths = paths
         for path in paths {
-            let descriptor = open(path, O_EVTONLY)
-            guard descriptor >= 0 else { continue }
-            let watcher = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
-                                                                    eventMask: [.write, .rename, .delete],
-                                                                    queue: .global(qos: .utility))
-            watcher.setEventHandler { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    await refresh(projects: self.projects, sdks: self.sdks, force: true)
-                }
-            }
-            watcher.setCancelHandler { close(descriptor) }
-            watcher.resume()
+            guard let watcher = Self.makeWatcher(at: path, onChange: { [weak self] in
+                guard let self else { return }
+                await self.refresh(projects: self.projects, sdks: self.sdks, force: true)
+            }) else { continue }
             watchers.append(watcher)
         }
+    }
+
+    /// Creates and owns the DispatchSource outside the MainActor. Dispatch invokes
+    /// its cancel handler on the source's queue, so inheriting MainActor isolation
+    /// here would trap when the descriptor is closed during watcher replacement.
+    private nonisolated static func makeWatcher(
+        at path: String,
+        onChange: @escaping @MainActor @Sendable () async -> Void
+    ) -> DispatchSourceFileSystemObject? {
+        let descriptor = Darwin.open(path, O_EVTONLY)
+        guard descriptor >= 0 else { return nil }
+        let watcher = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .rename, .delete],
+            queue: .global(qos: .utility)
+        )
+        watcher.setEventHandler {
+            Task { @MainActor in await onChange() }
+        }
+        watcher.setCancelHandler { _ = Darwin.close(descriptor) }
+        watcher.resume()
+        return watcher
     }
 }

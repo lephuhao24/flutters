@@ -8,7 +8,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(AppDestination.allCases, selection: $container.windowCoordinator.selection) { item in
-                Label(item.rawValue, systemImage: item.symbol).tag(item)
+                Label(item.title, systemImage: item.symbol).tag(item)
             }
             .navigationTitle("FVM GUI")
             .navigationSplitViewColumnWidth(min: 190, ideal: 220)
@@ -26,11 +26,10 @@ struct ContentView: View {
                 if container.setup.state != .ready {
                     DependencySetupView(container: container)
                 } else if container.detecting {
-                    ProgressView("Loading FVM…").frame(maxWidth: .infinity, maxHeight: .infinity)                } else {
+                    ProgressView("Loading FVM…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
                     switch container.windowCoordinator.selection ?? .sdks {
                     case .sdks: SDKsView(container: container)
-                    case .storage: SDKStorageView(container: container)
-                    case .releases: ReleasesView(container: container)
                     case .projects: ProjectsView(container: container) { project in
                         container.flutterDoctor.runProject(project, installedSDKs: container.sdkModel?.sdks ?? [])
                         container.windowCoordinator.selection = .doctor
@@ -39,7 +38,7 @@ struct ContentView: View {
                     case .activity: ActivityView(container: container)
                     }
                 }
-            }.navigationTitle((container.windowCoordinator.selection ?? .sdks).rawValue)
+            }.navigationTitle((container.windowCoordinator.selection ?? .sdks).title)
         }
         .onAppear {
             appDelegate.windowCoordinator = container.windowCoordinator

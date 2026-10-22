@@ -16,6 +16,7 @@ import Observation
     let projectDashboard: ProjectDashboardViewModel
     let flutterDoctor: FlutterDoctorViewModel
     let projectExport: ProjectExportService
+    let buildReleaseStore: BuildReleaseStore
     private let defaults: UserDefaults
     private(set) var installation: FVMInstallation?
     private(set) var sdkModel: SDKViewModel?
@@ -37,11 +38,20 @@ import Observation
     var manualBrewPath: String
     private var launchChecked = false
     var releaseError: String?
+    private var releaseCatalogLoadedAt: Date?
+    private static let releaseCatalogKey = "flutter.releaseCatalog.v1"
+    private static let releaseCatalogDateKey = "flutter.releaseCatalog.v1.loadedAt"
+    private static let releaseCatalogTTL: TimeInterval = 24 * 60 * 60
     private var service: (any FVMService)?
     let operation = LongRunningOperation()
 
     init(defaults: UserDefaults = .standard, executor: any CLIExecuting = CLIExecutor(), locator: (any ExecutableLocating)? = nil, projectService: any ProjectServicing = ProjectService(), setupService: (any DependencySettingUp)? = nil, discoveryService: any ProjectDiscovering = ProjectDiscoveryService(), storageService: any SDKStorageServicing = SDKStorageService(), launchAtLoginService: (any LaunchAtLoginManaging)? = nil) {
         self.defaults = defaults
+        if let data = defaults.data(forKey: Self.releaseCatalogKey),
+           let cached = try? JSONDecoder().decode([FlutterRelease].self, from: data) {
+            releases = cached
+            releaseCatalogLoadedAt = defaults.object(forKey: Self.releaseCatalogDateKey) as? Date
+        }
         self.menuBarPreferences = MenuBarPreferences(defaults: defaults)
         self.windowCoordinator = AppWindowCoordinator()
         self.launchAtLogin = launchAtLoginService ?? LaunchAtLoginService()
@@ -61,6 +71,7 @@ import Observation
         self.projectDashboard = ProjectDashboardViewModel(actions: ProjectQuickActionService(), activity: activity)
         self.flutterDoctor = FlutterDoctorViewModel(service: FlutterDoctorService(), activity: activity)
         self.projectExport = ProjectExportService()
+        self.buildReleaseStore = BuildReleaseStore(defaults: defaults)
         manualPath = defaults.string(forKey: "fvmExecutable") ?? ""
         manualBrewPath = defaults.string(forKey: "brewExecutable") ?? ""
         recentProjectPaths = defaults.stringArray(forKey: "recentProjectPaths") ?? []
@@ -114,17 +125,29 @@ import Observation
         sdkModel = SDKViewModel(service: service)
         defaults.set(manualPath, forKey: "fvmExecutable")
         error = nil
-        releases = []
-        releaseError = nil
         await sdkModel?.refresh()
-        await refreshProjects()
-        await refreshStorage()
+        // The installed SDK list is the primary screen. Project inspection and disk
+        // measurements can take much longer, so start them without delaying navigation.
+        Task { await refreshProjects() }
     }
-    func loadReleases() async {
+    func loadReleases(forceRefresh: Bool = false) async {
         guard let service, !loadingReleases else { return }
+        if !forceRefresh, !releases.isEmpty,
+           let releaseCatalogLoadedAt,
+           Date().timeIntervalSince(releaseCatalogLoadedAt) < Self.releaseCatalogTTL {
+            return
+        }
         loadingReleases = true
         defer { loadingReleases = false }
-        do { releases = try await service.releases(); releaseError = nil }
+        do {
+            let fetched = try await service.releases()
+            releases = fetched
+            let loadedAt = Date()
+            releaseCatalogLoadedAt = loadedAt
+            defaults.set(try? JSONEncoder().encode(fetched), forKey: Self.releaseCatalogKey)
+            defaults.set(loadedAt, forKey: Self.releaseCatalogDateKey)
+            releaseError = nil
+        }
         catch { releaseError = error.localizedDescription }
     }
     func addProject(_ url: URL) async {
@@ -319,7 +342,7 @@ import Observation
             let refresh = Task {
                 await sdkModel?.refresh()
                 await refreshProjects()
-                await refreshStorage(force: true)
+                await refreshStorage(force: false)
             }
             await refresh.value
             if let failure { throw failure }

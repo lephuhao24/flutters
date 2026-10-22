@@ -9,6 +9,7 @@ struct ProjectDashboardView: View {
     @State private var consoleExpanded = true
     @State private var copied = false
     @State private var showingProjectExport = false
+    @State private var showingBuildRelease = false
 
     private var model: ProjectDashboardViewModel { container.projectDashboard }
     private var compatibility: ProjectCompatibility? { container.compatibilityModel.result(for: project) }
@@ -27,6 +28,7 @@ struct ProjectDashboardView: View {
                 projectHeader
                 environmentSummary
                 quickActions
+                buildReleaseAction
                 exportAction
                 activityConsole
             }
@@ -44,6 +46,31 @@ struct ProjectDashboardView: View {
                               projectBookmarks: container.projectBookmarks)
                 .frame(minWidth: 760, minHeight: 620)
         }
+        .sheet(isPresented: $showingBuildRelease) {
+            if let fvm = container.installation {
+                BuildReleaseView(project: project, fvm: fvm, executor: container.executor, sdk: installedSDK, store: container.buildReleaseStore)
+            } else {
+                ContentUnavailableView("FVM Unavailable", systemImage: "exclamationmark.triangle", description: Text("Configure FVM before building a release."))
+                    .frame(minWidth: 500, minHeight: 250)
+            }
+        }
+    }
+
+    private var buildReleaseAction: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "hammer.fill").font(.title2).foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Build Release").font(.title3.weight(.semibold))
+                Text("Configure and run local Android, iOS, or macOS Flutter builds.").font(.callout).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { showingBuildRelease = true } label: { Label("Build Release…", systemImage: "shippingbox") }
+                .buttonStyle(.borderedProminent)
+                .disabled(project.type != .flutterApp || container.installation == nil)
+                .help(project.type == .flutterApp ? "Build a release for this registered Flutter project" : "Only Flutter applications can be built")
+        }
+        .padding(16)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var exportAction: some View {

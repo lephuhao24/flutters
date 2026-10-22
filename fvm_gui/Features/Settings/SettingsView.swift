@@ -3,12 +3,23 @@ import AppKit
 
 struct SettingsView: View {
     @Bindable var container: AppContainer
+    @State private var releaseStoragePath = UserDefaults.standard.string(forKey: ReleaseStorageService.customPathKey) ?? ""
+    @State private var releaseCount = 0
+    @State private var releaseSize: Int64 = 0
+    @State private var pendingStorageURL: URL?
+    @State private var pendingBookmark: Data?
+    @State private var showingStorageChangeOptions = false
+    @State private var storageOperation = false
+    @State private var storageMessage: String?
+    private let releaseStorage = ReleaseStorageService()
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Dependency Settings").font(.title2)
                 menuBarSettings
                 launchAtLoginSettings
+                releaseStorageSettings
                 if let installation = container.installation {
                     LabeledContent("FVM Version", value: installation.version)
                     Text(installation.executable.path).font(.caption).textSelection(.enabled)
@@ -41,6 +52,117 @@ struct SettingsView: View {
                 if container.setup.state != .ready { Text("Dependency setup and installation output are available in the main window.").font(.caption).foregroundStyle(.secondary) }
             }.padding(24)
         }.frame(width: 620, height: 720)
+    }
+
+    private var releaseStorageSettings: some View {
+        let current = effectiveStorageURL
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Release Storage").font(.headline)
+            LabeledContent("Location", value: current.path).font(.caption)
+            LabeledContent("Archived releases", value: "\(releaseCount)")
+            LabeledContent("Archive size", value: ByteCountFormatter.string(fromByteCount: releaseSize, countStyle: .file))
+            if let capacity = try? current.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage {
+                LabeledContent("Available on volume", value: ByteCountFormatter.string(fromByteCount: capacity, countStyle: .file))
+            }
+            Toggle("Archive new release builds by default", isOn: Binding(
+                get: { UserDefaults.standard.object(forKey: "buildRelease.archiveByDefault") as? Bool ?? true },
+                set: { enabled in UserDefaults.standard.set(enabled, forKey: "buildRelease.archiveByDefault") }
+            ))
+            HStack {
+                Button("Change Location…") { chooseStorageLocation() }
+                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([current]) }
+                Button("Open Release Archive") { NSWorkspace.shared.open(current) }
+            }
+            HStack {
+                Button("Reset to Default") { resetStorageLocation() }.disabled(releaseStoragePath.isEmpty)
+                if storageOperation { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+            if let storageMessage {
+                Text(storageMessage).font(.caption).foregroundStyle(storageMessage.localizedCaseInsensitiveContains("could not") ? .red : .secondary).textSelection(.enabled)
+            }
+            Text("Dart symbol files can reveal obfuscated source mappings. Keep release archives private and backed up securely.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+        .task { await refreshStorageStatistics() }
+        .confirmationDialog("Use the selected release storage location", isPresented: $showingStorageChangeOptions, titleVisibility: .visible) {
+            Button("Use for Future Builds") { applyPendingStorageLocation() }
+            Button("Move Existing Archives") { Task { await migrateAndApplyStorageLocation() } }
+            Button("Cancel", role: .cancel) { pendingStorageURL = nil; pendingBookmark = nil }
+        } message: {
+            Text("Existing archives will remain in place unless you choose Move Existing Archives. The current archive uses \(ByteCountFormatter.string(fromByteCount: releaseSize, countStyle: .file)).")
+        }
+    }
+
+    private var effectiveStorageURL: URL {
+        if !releaseStoragePath.isEmpty { return URL(fileURLWithPath: releaseStoragePath, isDirectory: true) }
+        return (try? ReleaseStorageService.defaultStorageURL()) ?? FileManager.default.temporaryDirectory.appendingPathComponent("Releases", isDirectory: true)
+    }
+
+    private func chooseStorageLocation() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose Release Storage"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            pendingStorageURL = url
+            pendingBookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+            showingStorageChangeOptions = true
+        } catch { storageMessage = "Release storage location could not be authorized: \(error.localizedDescription)" }
+    }
+
+    private func applyPendingStorageLocation() {
+        guard let url = pendingStorageURL else { return }
+        Task {
+            do {
+                try await releaseStorage.configureStorageLocation(url, bookmark: pendingBookmark)
+                releaseStoragePath = url.path
+                storageMessage = "New builds will use the selected release storage location. Existing archives were left in place."
+                await refreshStorageStatistics()
+            } catch { storageMessage = "Release storage location could not be changed: \(error.localizedDescription)" }
+            pendingStorageURL = nil
+            pendingBookmark = nil
+        }
+    }
+
+    private func migrateAndApplyStorageLocation() async {
+        guard let destination = pendingStorageURL else { return }
+        storageOperation = true
+        defer { storageOperation = false }
+        do {
+            let source = effectiveStorageURL
+            if releaseSize > 0 {
+                try await releaseStorage.migrateArchives(from: source, to: destination)
+                container.buildReleaseStore.rewriteReleaseRootPaths(from: source, to: destination)
+            }
+            try await releaseStorage.configureStorageLocation(destination, bookmark: pendingBookmark)
+            releaseStoragePath = destination.path
+            storageMessage = "Existing archives were copied, verified, and moved to the new location."
+            await refreshStorageStatistics()
+        } catch { storageMessage = "Release storage migration could not be completed: \(error.localizedDescription). Original archives remain available." }
+        pendingStorageURL = nil
+        pendingBookmark = nil
+    }
+
+    private func resetStorageLocation() {
+        Task {
+            await releaseStorage.resetStorageLocation()
+            releaseStoragePath = ""
+            storageMessage = "The default Application Support location will be used for future builds. Existing custom archives were left in place."
+            await refreshStorageStatistics()
+        }
+    }
+
+    private func refreshStorageStatistics() async {
+        do {
+            let stats = try await releaseStorage.storageStatistics()
+            releaseCount = stats.releaseCount
+            releaseSize = stats.sizeBytes
+        } catch { storageMessage = "Release storage could not be inspected: \(error.localizedDescription)" }
     }
 
     private var menuBarSettings: some View {

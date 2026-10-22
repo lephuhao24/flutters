@@ -1,0 +1,106 @@
+name: Release FVM GUI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # This image provides Xcode 27, required by this repository's project format.
+    runs-on: xcode-27
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate release tag
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Tag must use vMAJOR.MINOR or vMAJOR.MINOR.PATCH, for example v1.0." >&2
+            exit 1
+          fi
+          PROJECT_VERSION="$(xcodebuild -project fvm_gui.xcodeproj -scheme fvm_gui -showBuildSettings | awk '/^[[:space:]]*MARKETING_VERSION = / { print $3; exit }')"
+          if [[ "$VERSION" != "$PROJECT_VERSION" ]]; then
+            echo "Release tag version $VERSION does not match MARKETING_VERSION $PROJECT_VERSION." >&2
+            exit 1
+          fi
+
+      - name: Build unsigned macOS app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project fvm_gui.xcodeproj \
+            -scheme fvm_gui \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package release assets
+        id: package
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ASSET_DIR="$RUNNER_TEMP/release-assets"
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release/fvm_gui.app"
+          mkdir -p "$ASSET_DIR"
+          test -d "$APP_PATH"
+          ditto "$APP_PATH" "$ASSET_DIR/FVM GUI.app"
+          ditto -c -k --sequesterRsrc --keepParent "$ASSET_DIR/FVM GUI.app" "$ASSET_DIR/FVM-GUI.zip"
+          shasum -a 256 "$ASSET_DIR/FVM-GUI.zip" > "$ASSET_DIR/FVM-GUI.zip.sha256"
+          printf 'asset_dir=%s\n' "$ASSET_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" \
+              "$ASSET_DIR/FVM-GUI.zip" \
+              "$ASSET_DIR/FVM-GUI.zip.sha256" \
+              --clobber
+          else
+            gh release create "$TAG_NAME" \
+              "$ASSET_DIR/FVM-GUI.zip" \
+              "$ASSET_DIR/FVM-GUI.zip.sha256" \
+              --verify-tag \
+              --generate-notes
+          fi
+
+      - name: Generate Homebrew cask
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          SHA256="$(awk '{print $1}' "$ASSET_DIR/FVM-GUI.zip.sha256")"
+          python3 scripts/generate-homebrew-cask.py \
+            --version "$VERSION" \
+            --sha256 "$SHA256" \
+            --output "$ASSET_DIR/fvm-gui.rb"
+
+      - name: Audit Homebrew cask
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew audit --cask --strict "${{ steps.package.outputs.asset_dir }}/fvm-gui.rb"
+
+      - name: Attach cask to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          ASSET_DIR: ${{ steps.package.outputs.asset_dir }}
+        run: gh release upload "$TAG_NAME" "$ASSET_DIR/fvm-gui.rb" --clobber

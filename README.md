@@ -39,6 +39,10 @@ xcodebuild -project fvm_gui.xcodeproj -scheme fvm_gui \
 
 Unsigned build commands are for local verification. For distribution, configure your own bundle identifier and Developer ID signing team, archive with Hardened Runtime, sign the exported application, notarize using Apple's `notarytool`, and staple the ticket. Developer ID signing/notarization requires your account and is not included in source validation.
 
+## Homebrew distribution
+
+The release workflow and private tester tap setup are documented in [Homebrew distribution](docs/homebrew-distribution.md). Tester builds are currently unsigned and unnotarized.
+
 ## Usage and behavior
 
 - **Installed SDKs:** refresh installed versions, install an explicit version/channel, set global, or confirm removal. Global status resolves FVM's global cache symlink. Channel is shown only when known; a numeric version does not establish its channel.
